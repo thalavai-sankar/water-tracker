@@ -1,0 +1,17 @@
+{
+  "name": "Water Tracker",
+  "short_name": "Water",
+  "description": "Track daily hydration and receive laptop web reminders.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eef7f8",
+  "theme_color": "#0f5f91",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

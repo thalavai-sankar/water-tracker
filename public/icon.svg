@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Water Tracker icon">
+  <rect width="128" height="128" rx="24" fill="#eef7f8"/>
+  <path d="M64 14c17 22 34 45 34 70 0 21-15 34-34 34S30 105 30 84c0-25 17-48 34-70Z" fill="#1f7db6"/>
+  <path d="M44 84c0 12 8 20 20 20" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
+  <path d="M50 51c5-8 10-15 14-20 11 15 21 30 25 44-11-12-23-18-39-24Z" fill="#53c7d5" opacity=".9"/>
+</svg>
