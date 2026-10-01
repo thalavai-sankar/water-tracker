@@ -9,6 +9,7 @@ export default defineSchema({
     endTime: v.string(),
     interval: v.number(),
     reminderActive: v.boolean(),
+    nextReminderAt: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_user", ["userId"]),
   waterEntries: defineTable({

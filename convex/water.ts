@@ -1,7 +1,14 @@
 import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 
-const defaultSettings = {
+const defaultSettings: {
+  goal: number;
+  startTime: string;
+  endTime: string;
+  interval: number;
+  reminderActive: boolean;
+  nextReminderAt?: number;
+} = {
   goal: 2500,
   startTime: "08:00",
   endTime: "22:00",
@@ -44,6 +51,7 @@ export const getToday = query({
         endTime: settings.endTime,
         interval: settings.interval,
         reminderActive: settings.reminderActive,
+        nextReminderAt: settings.nextReminderAt,
       },
       entries: entries.sort((a, b) => a.createdAt - b.createdAt),
       achievedDates: achievements.map((achievement) => achievement.dateKey),
@@ -109,6 +117,7 @@ export const saveSettings = mutation({
     endTime: v.string(),
     interval: v.number(),
     reminderActive: v.boolean(),
+    nextReminderAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx);
@@ -128,9 +137,12 @@ export const saveSettings = mutation({
     };
 
     if (existing) {
-      await ctx.db.patch(existing._id, value);
+      await ctx.db.patch(existing._id, { ...value, nextReminderAt: args.nextReminderAt });
     } else {
-      await ctx.db.insert("userSettings", value);
+      await ctx.db.insert("userSettings", {
+        ...value,
+        ...(args.nextReminderAt === undefined ? {} : { nextReminderAt: args.nextReminderAt }),
+      });
     }
   },
 });

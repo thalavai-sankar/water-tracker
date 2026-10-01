@@ -35,6 +35,7 @@ type TrackerState = {
   endTime: string;
   interval: number;
   reminderActive: boolean;
+  nextReminderAt?: number;
   entriesByDate: Record<string, Entry[]>;
   achievedDates: string[];
 };
@@ -45,6 +46,7 @@ const defaults: TrackerState = {
   endTime: "22:00",
   interval: 60,
   reminderActive: false,
+  nextReminderAt: undefined,
   entriesByDate: {},
   achievedDates: [],
 };
@@ -60,8 +62,10 @@ const clerkConfigured = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 const backendConfigured = Boolean(process.env.NEXT_PUBLIC_CONVEX_URL && clerkConfigured);
 const convexApi = anyApi as any;
 
+type ReminderSettings = Pick<TrackerState, "goal" | "startTime" | "endTime" | "interval" | "reminderActive" | "nextReminderAt">;
+
 type CloudData = {
-  settings: Pick<TrackerState, "goal" | "startTime" | "endTime" | "interval" | "reminderActive">;
+  settings: ReminderSettings;
   entries: { amount: number; createdAt: number }[];
   achievedDates: string[];
 };
@@ -71,9 +75,7 @@ type CloudAdapter = {
   addEntry: (args: { amount: number; dateKey: string }) => Promise<unknown>;
   markAchieved: (args: { dateKey: string }) => Promise<unknown>;
   resetToday: (args: { dateKey: string }) => Promise<unknown>;
-  saveSettings: (
-    args: Pick<TrackerState, "goal" | "startTime" | "endTime" | "interval" | "reminderActive">,
-  ) => Promise<unknown>;
+  saveSettings: (args: ReminderSettings) => Promise<unknown>;
   undoLastEntry: (args: { dateKey: string }) => Promise<unknown>;
 };
 
@@ -379,6 +381,7 @@ function TrackerApp({
         } else {
           setMessage(reminderText);
         }
+        cloud?.saveSettings(toReminderSettings(withReminderTimestamp(state))).catch(() => undefined);
         schedule();
       }, delay);
     };
@@ -387,10 +390,45 @@ function TrackerApp({
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [state, total]);
+  }, [cloud, state, total]);
 
   function updateState(nextState: TrackerState) {
     setState(nextState);
+  }
+
+  function withReminderTimestamp(nextState: TrackerState): TrackerState {
+    return {
+      ...nextState,
+      nextReminderAt: nextState.reminderActive ? getNextReminderDate(nextState).getTime() : undefined,
+    };
+  }
+
+  function toReminderSettings(nextState: TrackerState): ReminderSettings {
+    return {
+      goal: nextState.goal,
+      startTime: nextState.startTime,
+      endTime: nextState.endTime,
+      interval: nextState.interval,
+      reminderActive: nextState.reminderActive,
+      nextReminderAt: nextState.nextReminderAt,
+    };
+  }
+
+  function saveReminderSettings(nextState: TrackerState, successMessage?: string) {
+    const settings = withReminderTimestamp(nextState);
+    updateState(settings);
+
+    if (!cloud) {
+      if (successMessage) setMessage(successMessage);
+      return;
+    }
+
+    cloud
+      .saveSettings(toReminderSettings(settings))
+      .then(() => {
+        if (successMessage) setMessage(successMessage);
+      })
+      .catch(() => setMessage("Reminder saved locally, but backend sync failed."));
   }
 
   function addWater(amount: number) {
@@ -519,17 +557,15 @@ function TrackerApp({
         </article>
         <ReminderPanel
           active={state.reminderActive}
+          canSave={Boolean(cloud)}
           nextReminder={nextReminder}
           onNotify={requestNotifications}
+          onSave={() => saveReminderSettings(state, "Reminder schedule saved to the backend.")}
           onStart={() => {
-            const next = { ...state, reminderActive: true };
-            updateState(next);
-            cloud?.saveSettings(next).catch(() => setMessage("Reminder started locally, but cloud sync failed."));
+            saveReminderSettings({ ...state, reminderActive: true }, "Reminder started and saved.");
           }}
           onStop={() => {
-            const next = { ...state, reminderActive: false };
-            updateState(next);
-            cloud?.saveSettings(next).catch(() => setMessage("Reminder stopped locally, but cloud sync failed."));
+            saveReminderSettings({ ...state, reminderActive: false }, "Reminder stopped and saved.");
           }}
         />
       </section>
@@ -614,27 +650,21 @@ function TrackerApp({
               suffix="ml"
               value={state.goal}
               onChange={(goal) => {
-                const next = { ...state, goal };
-                updateState(next);
-                cloud?.saveSettings(next).catch(() => setMessage("Settings saved locally, but cloud sync failed."));
+                saveReminderSettings({ ...state, goal });
               }}
             />
             <TimeField
               label="Wake time"
               value={state.startTime}
               onChange={(startTime) => {
-                const next = { ...state, startTime };
-                updateState(next);
-                cloud?.saveSettings(next).catch(() => setMessage("Settings saved locally, but cloud sync failed."));
+                saveReminderSettings({ ...state, startTime });
               }}
             />
             <TimeField
               label="Wind down"
               value={state.endTime}
               onChange={(endTime) => {
-                const next = { ...state, endTime };
-                updateState(next);
-                cloud?.saveSettings(next).catch(() => setMessage("Settings saved locally, but cloud sync failed."));
+                saveReminderSettings({ ...state, endTime });
               }}
             />
             <NumberField
@@ -645,9 +675,7 @@ function TrackerApp({
               suffix="min"
               value={state.interval}
               onChange={(interval) => {
-                const next = { ...state, interval };
-                updateState(next);
-                cloud?.saveSettings(next).catch(() => setMessage("Settings saved locally, but cloud sync failed."));
+                saveReminderSettings({ ...state, interval });
               }}
             />
           </div>
@@ -736,14 +764,18 @@ function InfoBanner({ body, title }: { body: string; title: string }) {
 
 function ReminderPanel({
   active,
+  canSave,
   nextReminder,
   onNotify,
+  onSave,
   onStart,
   onStop,
 }: {
   active: boolean;
+  canSave: boolean;
   nextReminder: Date;
   onNotify: () => void;
+  onSave: () => void;
   onStart: () => void;
   onStop: () => void;
 }) {
@@ -776,6 +808,15 @@ function ReminderPanel({
         <button className="min-h-11 rounded-lg border border-slate-200 bg-white px-5 font-semibold text-slate-700 transition hover:border-slate-300" type="button" onClick={onStop}>
           Stop
         </button>
+        {canSave ? (
+          <button
+            className="min-h-11 rounded-lg border border-sky-200 bg-sky-50 px-5 font-semibold text-sky-800 transition hover:border-sky-300 hover:bg-sky-100"
+            type="button"
+            onClick={onSave}
+          >
+            Save schedule
+          </button>
+        ) : null}
       </div>
     </article>
   );
